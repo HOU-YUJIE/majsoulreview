@@ -56,6 +56,15 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, CancelEventArgs e) => _hotkey.Dispose();
 
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && ExpandedImageView.Visibility == Visibility.Visible)
+        {
+            CloseExpandedImage();
+            e.Handled = true;
+        }
+    }
+
     private void LoadSettingsControls()
     {
         _recordedHotkey = _settings.Hotkey;
@@ -190,7 +199,7 @@ public partial class MainWindow : Window
         UpdateStatus("截图区域已清除，下次第一张截图时会重新框选");
     }
 
-    private void HandleCaptureHotkey()
+    private async void HandleCaptureHotkey()
     {
         if (_captureBusy)
         {
@@ -200,6 +209,9 @@ public partial class MainWindow : Window
         _captureBusy = true;
         try
         {
+            StatusToast.DismissAll();
+            await Task.Delay(100);
+
             var capture = ScreenCaptureService.CaptureForegroundWindow();
             if (_pendingQuestion is null)
             {
@@ -359,6 +371,11 @@ public partial class MainWindow : Window
         ReviewActions.Visibility = _showingAnswer ? Visibility.Visible : Visibility.Collapsed;
         CorrectButton.IsEnabled = !_gradedThisView;
         WrongButton.IsEnabled = !_gradedThisView;
+
+        if (ExpandedImageView.Visibility == Visibility.Visible)
+        {
+            RefreshExpandedCard(card);
+        }
     }
 
     private void ShowEmptyState()
@@ -376,6 +393,42 @@ public partial class MainWindow : Window
 
         _showingAnswer = !_showingAnswer;
         RefreshCardImage(card);
+    }
+
+    private void ExpandImage_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedCard is not { } card || CardImage.Source is null)
+        {
+            return;
+        }
+
+        ExpandedImageView.Visibility = Visibility.Visible;
+        RefreshExpandedCard(card);
+        ExpandedRevealButton.Focus();
+    }
+
+    private void RefreshExpandedCard(ReviewCard card)
+    {
+        ExpandedCardImage.Source = CardImage.Source;
+        ExpandedCardTitle.Text = card.DisplayTitle;
+        ExpandedImageBadgeText.Text = ImageBadgeText.Text;
+        ExpandedImageBadge.Background = ImageBadge.Background;
+        ExpandedImageBadgeText.Foreground = ImageBadgeText.Foreground;
+        ExpandedCardReviewStats.Text = card.DisplayStats;
+        ExpandedCardNote.Text = string.IsNullOrWhiteSpace(card.Note) ? "未添加注释" : card.Note;
+        ExpandedCardNote.Visibility = _showingAnswer ? Visibility.Visible : Visibility.Collapsed;
+        ExpandedReviewActions.Visibility = _showingAnswer ? Visibility.Visible : Visibility.Collapsed;
+        ExpandedRevealButton.Content = RevealButton.Content;
+        ExpandedCorrectButton.IsEnabled = !_gradedThisView;
+        ExpandedWrongButton.IsEnabled = !_gradedThisView;
+    }
+
+    private void CloseExpandedImage_Click(object sender, RoutedEventArgs e) => CloseExpandedImage();
+
+    private void CloseExpandedImage()
+    {
+        ExpandedImageView.Visibility = Visibility.Collapsed;
+        ExpandedCardImage.Source = null;
     }
 
     private void CorrectAnswer_Click(object sender, RoutedEventArgs e) => RecordReview(correct: true);
@@ -402,7 +455,8 @@ public partial class MainWindow : Window
         ReloadCards(card.Id);
         _gradedThisView = true;
         RefreshSelectedCard();
-        UpdateStatus(correct ? "已记录：这次做对了" : "已记录：这次做错了");
+        var result = correct ? "已记录：这次做对了" : "已记录：这次做错了";
+        UpdateStatus(MoveToNextCard() ? $"{result}，已切换到下一题" : $"{result}，已是最后一题");
     }
 
     private void PreviousCard_Click(object sender, RoutedEventArgs e)
@@ -416,11 +470,19 @@ public partial class MainWindow : Window
 
     private void NextCard_Click(object sender, RoutedEventArgs e)
     {
+        MoveToNextCard();
+    }
+
+    private bool MoveToNextCard()
+    {
         if (CardsList.SelectedIndex >= 0 && CardsList.SelectedIndex < CardsList.Items.Count - 1)
         {
             CardsList.SelectedIndex++;
             CardsList.ScrollIntoView(CardsList.SelectedItem);
+            return true;
         }
+
+        return false;
     }
 
     private void EditCard_Click(object sender, RoutedEventArgs e)
